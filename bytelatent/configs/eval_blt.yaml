@@ -2,7 +2,7 @@
 
 
 
-ckpt_dir: "/home/cunyuliu/blt-main/tmp/trainblt_1000_newcode/checkpoints/0000001000/consolidated"
+ckpt_dir: "/home/cunyuliu/blt-main/tmp/trainblt_1000_newcode/checkpoints/0000032500/consolidated"
 
 # (Required) Path to a directory where output files or logs will be saved.
 # The script asserts that this directory is specified.
@@ -15,7 +15,7 @@ validation:
   # root_dir: /home/cunyuliu/train_data/splited_val_train_fortrain/
   # sources: ["mergedByCode_new_train.arrow"]
 # training_set_path: /home/cunyuliu/train_data/splited_val_train_fortrain/mergedByCode_new_train.arrow
-entropy_ckpt_dir: "/home/cunyuliu/blt-main-old/tmp/blt-entropy/checkpoints/0000100000/"
+entropy_ckpt_dir: "/home/cunyuliu/blt-main/tmp/blt-entropy-new/checkpoints/0000001000/"
 consolidate_if_needed: true
 consolidate_folder: "consolidated"
 # 为了只运行新的“生成并评估”模式，我们将 run_ppl 设为 false
@@ -24,11 +24,13 @@ run_ppl: true  # 关闭PPL评估，专注于生成评估
 run_tasks: false
 # run_rna_metrics: true
 
+num_to_generate: 256
+batch_size: 1
 
 
 # A list of strings that the model will use as starting points for generation.
-# prompts:
-#   - ""
+prompts:
+  - ""
 
 
 # -----------------------------------------------------------------------------
