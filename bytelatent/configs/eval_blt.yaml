@@ -1,0 +1,40 @@
+# nohup python -m bytelatent.generate_blt config=/home/cunyuliu/blt-main/bytelatent/configs/eval_blt.yaml > /home/cunyuliu/blt-main/nohup_log/nohup_generation_0713.log 2>&1 &
+
+
+
+ckpt_dir: "/home/cunyuliu/blt-main/tmp/trainblt_1000_newcode/checkpoints/0000001000/consolidated"
+
+# (Required) Path to a directory where output files or logs will be saved.
+# The script asserts that this directory is specified.
+dump_dir: "/home/cunyuliu/blt-main/tmp/generation_results/"
+
+
+validation:
+  root_dir: /home/cunyuliu/eval_data/
+  sources: ["mergedByCode_new_val.arrow"]
+  # root_dir: /home/cunyuliu/train_data/splited_val_train_fortrain/
+  # sources: ["mergedByCode_new_train.arrow"]
+# training_set_path: /home/cunyuliu/train_data/splited_val_train_fortrain/mergedByCode_new_train.arrow
+entropy_ckpt_dir: "/home/cunyuliu/blt-main-old/tmp/blt-entropy/checkpoints/0000100000/"
+consolidate_if_needed: true
+consolidate_folder: "consolidated"
+# 为了只运行新的“生成并评估”模式，我们将 run_ppl 设为 false
+# 如果您想同时运行PPL评估和生成评估，可以将其改回 true
+run_ppl: true  # 关闭PPL评估，专注于生成评估
+run_tasks: false
+# run_rna_metrics: true
+
+
+
+# A list of strings that the model will use as starting points for generation.
+# prompts:
+#   - ""
+
+
+# -----------------------------------------------------------------------------
+# Optional S3 Configuration
+# -----------------------------------------------------------------------------
+
+# (Optional) The AWS profile to use if your checkpoints are stored in S3.
+# If your data is local, you can omit this or set it to null.
+s3_profile: null

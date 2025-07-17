@@ -1,0 +1,29 @@
+ckpt_dir: /home/cunyuliu/blt-main/tmp/trainblt_100000_0628/checkpoints/0000100000
+dump_dir: /home/cunyuliu/blt-main/tmp/evalblt
+validation:
+  # root_dir: /home/cunyuliu/eval_data/
+  # sources: ["mergedByCode_new_val.arrow"]
+  root_dir: /home/cunyuliu/train_data/splited_val_train_fortrain/
+  sources: ["mergedByCode_new_train.arrow"]
+training_set_path: /home/cunyuliu/train_data/splited_val_train_fortrain/mergedByCode_new_train.arrow
+entropy_ckpt_dir: "blt-main/tmp/blt-entropy/checkpoints/0000100000"
+consolidate_if_needed: true
+consolidate_folder: "consolidated"
+# 为了只运行新的“生成并评估”模式，我们将 run_ppl 设为 false
+# 如果您想同时运行PPL评估和生成评估，可以将其改回 true
+run_ppl: true  # 关闭PPL评估，专注于生成评估
+run_tasks: false
+run_rna_metrics: true
+generation_eval:
+  num_to_generate: 10000  # 生成序列数量
+  # generation_args:
+  #   temperature: 0.7
+  #   top_p: 0.9
+  #   max_gen_len: 100
+
+# --- 新增配置块以激活“生成并评估”模式 ---
+# generation_eval:
+#   # 设置模型需要生成的序列数量，用于后续的特性分析
+#   num_to_generate: 20000
+
+# nohup python -m bytelatent.eval config=/home/cunyuliu/blt-main/bytelatent/configs/eval.yaml > /home/cunyuliu/blt-main/nohup_evalblt_0712_gener.log 2>&1 &
