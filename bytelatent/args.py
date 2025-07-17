@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict
 
 from bytelatent.checkpoint import CONSOLIDATE_FOLDER, CheckpointArgs
 from bytelatent.data.data_types import Batch
@@ -274,6 +274,17 @@ class ValidationArgs(BaseModel):
     sources: list[str] = []  # Other sources to eval on
     batch_size: int = 8
 
+class GenerationEvalArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    num_to_generate: int = Field(
+        10000, description="Total number of sequences to generate."
+    )
+    batch_size: int = Field(
+        32, description="Batch size for generation."
+    )
+    output_file: str = Field(
+        "/home/cunyuliu/blt-main/tmp/generation_results/generated_sequences.txt", description="File to save the generated sequences."
+    )
 
 class EvalArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -293,6 +304,20 @@ class EvalArgs(BaseModel):
 
     harness: LMHarnessArgs | None = LMHarnessArgs()
     validation: ValidationArgs | None = ValidationArgs()
+    training_set_path: str | None = None
+    run_rna_metrics: bool = False
+    num_to_generate: int = Field(
+        10000, description="Total number of sequences to generate."
+    )
+    batch_size: int = Field(
+        32, description="Batch size for generation."
+    )
+    output_file: str = Field(
+        "/home/cunyuliu/blt-main/tmp/generation_results/generated_sequences.txt", description="File to save the generated sequences."
+    )
+
+    # --- 添加新的层级化生成配置 ---
+    generation_eval: GenerationEvalArgs = Field(default_factory=GenerationEvalArgs)
 
     global_step: int | None = None  # for in-training evaluation
     s3_profile: str | None = None
