@@ -1,8 +1,8 @@
 import logging
 import os
-
+import math
 import torch
-
+from tqdm import tqdm # 引入tqdm来显示进度
 from bytelatent.args import EvalArgs
 from bytelatent.config_parser import parse_args_to_pydantic_model
 from bytelatent.data.file_util import get_fs
@@ -81,11 +81,13 @@ def generate_nocache(
     tokenizer: BltTokenizer,
     patcher: Patcher,
     max_prompt_len: int = 256,
-    max_gen_len: int = 256,   # 改不得
+    max_gen_len: int = 256,
     use_sampling: bool = False,
     temp: float = 1.0,
     top_k: int = 0,
     top_p: float = 0.0,
+    # --- 1. 添加新的 batch_size 参数 ---
+    batch_size: int = 1,
     remove_prompts: bool = True,
 ) -> list[list[int]]:
     assert (
@@ -93,7 +95,8 @@ def generate_nocache(
     ), "generate_nocache requires patcher.realtime_patching=True"
     model.eval()
     if prompts is None:
-        prompt_tokens = None
+        # --- 2. 修正这里的逻辑, 使用新的 batch_size 参数 ---
+        prompt_tokens = [[tokenizer.bos_id] for _ in range(batch_size)]
         n_truncated_prompts = 0
         total_truncated_prompts = 0
     else:
@@ -161,7 +164,7 @@ def generate_nocache(
 
 
 def launch_generate(eval_args: EvalArgs):
-    assert eval_args.dump_dir is not None
+    # --- 分布式设置和模型加载 (保持不变) ---
     assert eval_args.ckpt_dir is not None
     distributed_args = DistributedArgs()
     distributed_args.configure_world()
@@ -191,13 +194,69 @@ def launch_generate(eval_args: EvalArgs):
     patcher_args.realtime_patching = True
     patcher_args.entropy_model_checkpoint_dir = eval_args.entropy_ckpt_dir
     patcher = patcher_args.build()
-    outputs = generate_nocache(
-        eval_args.prompts, model=model, tokenizer=tokenizer, patcher=patcher
-    )
-    text_outputs = [tokenizer.decode(t) for t in outputs]
+    
+    
+    # --- 核心逻辑修改：从单次执行改为批量循环生成 ---
+    num_to_generate = eval_args.num_to_generate
+    batch_size = eval_args.batch_size
+    output_file = eval_args.output_file
+
+    # 只有主进程 (rank 0) 才执行文件写入和打印操作
+    if world_rank == 0:
+        print(f"Starting generation of {eval_args.num_to_generate} sequences...")
+        print(f"Batch size: {eval_args.batch_size}, saving to: {eval_args.output_file}")
+        # 清空或创建输出文件
+        with open(eval_args.output_file, "w") as f:
+            pass 
+
+    # 计算总共需要多少个批次
+    num_batches = math.ceil(eval_args.num_to_generate / eval_args.batch_size)
+    
+    # 使用tqdm来显示进度条，仅在主进程上显示
+    progress_bar = tqdm(range(num_batches), disable=(world_rank != 0))
+
+    generated_count = 0
+    with open(output_file, "a") as f:
+        for i in progress_bar:
+            if generated_count >= num_to_generate:
+                break
+            
+            current_batch_size = min(batch_size, num_to_generate - generated_count)
+            
+            # 直接调用 generate_nocache，并从 eval_args 的正确位置传递参数
+            outputs = generate_nocache(
+                prompts=None,
+                model=model,
+                tokenizer=tokenizer,
+                patcher=patcher,
+                batch_size=current_batch_size,
+                # 从 eval_args.generator 获取生成器参数
+                max_gen_len=eval_args.generator.max_gen_len,
+                use_sampling=eval_args.generator.temperature > 0,
+                temp=eval_args.generator.temperature,
+                top_k=eval_args.generator.top_k,
+                top_p=eval_args.generator.top_p
+            )
+            
+            text_outputs = [tokenizer.decode(t) for t in outputs]
+            
+            if world_rank == 0:
+                for text in text_outputs:
+                    clean_text = text.replace("\n", " ").replace("\r", "")
+                    f.write(clean_text + "\n")
+                f.flush()
+
+            generated_count += len(text_outputs)
+            if world_rank == 0:
+                progress_bar.set_description(f"Generated {generated_count}/{num_to_generate}")
+
+    if world_rank == 0:
+        print(f"Generation complete. {generated_count} sequences saved to {output_file}")
+
     for p, t in zip(eval_args.prompts, text_outputs):
         print(f'Prompt: "{p}" Completion: "{t}"')
         print()
+
 
 
 def main():
