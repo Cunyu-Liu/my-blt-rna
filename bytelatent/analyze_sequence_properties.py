@@ -161,20 +161,28 @@ def calculate_single_rna_properties(seq: str) -> dict | None:
     if not isinstance(seq, str) or len(seq) < 2:
         return None
         
-    # --- 这是正确的顺序 ---
     # 1. 先将序列转换为大写，并且完成 T -> U 的替换
     seq_upper = seq.upper().replace("T", "U")
+    seq_upper = seq_upper.upper().replace("N", "")
+
     
     # 2. 然后再对替换后的结果进行检查
     if not all(c in "ACGU" for c in seq_upper):
-        # 像'GCGGCTTNGC...'这样的序列，因为含有'N'，在这里被正确地跳过
-        logger.warning(f"序列 '{seq}...' 包含非ACGU字符（如N），已跳过。")
+        # --- 修改点在这里 ---
+        # 找出所有不符合 'ACGU' 的独特字符
+        offenders = sorted(list(set(c for c in seq_upper if c not in "ACGU")))
+        offender_str = ", ".join(offenders)
+        
+        # 在日志中明确打印出找到的非法字符
+        logger.warning(
+            f"序列 '{seq[:10]}...' 因包含无法处理的字符 '{offender_str}' 而被跳过。"
+        )
         return None
 
     # --- 后续所有计算都使用转换并检查完毕的 seq_upper ---
     properties = {}
     seq_len = len(seq_upper)
-
+    
     # --- 结构性质 (使用ViennaRNA) ---
     try:
         structure, mfe = RNA.fold(seq_upper)
