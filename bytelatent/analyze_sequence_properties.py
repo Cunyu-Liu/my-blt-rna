@@ -1,5 +1,3 @@
-# analyze_sequence_properties.py (版本 3)
-
 '''
 python /home/cunyuliu/blt-main/bytelatent/analyze_sequence_properties.py \
     --input_file /home/cunyuliu/blt-main/tmp/generation_results/generated_sequences.txt \
@@ -12,7 +10,7 @@ import argparse
 import logging
 import math
 import os
-import random  # --- 新增导入 ---
+import random
 from collections import Counter, defaultdict
 from multiprocessing import Pool
 from pathlib import Path
@@ -139,9 +137,16 @@ def plot_property_distributions(user_props: dict, training_props: dict, output_p
     fig.suptitle('Physicochemical Property Distributions', fontsize=16)
 
     for i, key in enumerate(common_keys):
+        # 替换key中的下划线和首字母大写，用于标题显示
+        title_key = key.replace("_", " ").title()
+        if key == 'tm':
+            title_key = 'Melting Temperature (Tm)'
+        elif key == 'gc_content':
+            title_key = 'GC Content'
+        
         sns.kdeplot(user_props[key], ax=axes[i], label="User Sequences", fill=True, alpha=0.5, warn_singular=False)
         sns.kdeplot(training_props[key], ax=axes[i], label="Training Set", fill=True, alpha=0.5, warn_singular=False)
-        axes[i].set_title(f'Distribution of {key.replace("_", " ").title()}')
+        axes[i].set_title(f'Distribution of {title_key}')
         axes[i].set_xlabel(key)
         axes[i].set_ylabel('Density')
         axes[i].legend()
@@ -161,40 +166,44 @@ def calculate_single_rna_properties(seq: str) -> dict | None:
     if not isinstance(seq, str) or len(seq) < 2:
         return None
         
-    # 1. 先将序列转换为大写，并且完成 T -> U 的替换
     seq_upper = seq.upper().replace("T", "U")
-    seq_upper = seq_upper.upper().replace("N", "")
+    seq_upper = seq_upper.replace("N", "")
 
-    
-    # 2. 然后再对替换后的结果进行检查
     if not all(c in "ACGU" for c in seq_upper):
-        # --- 修改点在这里 ---
-        # 找出所有不符合 'ACGU' 的独特字符
         offenders = sorted(list(set(c for c in seq_upper if c not in "ACGU")))
         offender_str = ", ".join(offenders)
-        
-        # 在日志中明确打印出找到的非法字符
         logger.warning(
             f"序列 '{seq[:10]}...' 因包含无法处理的字符 '{offender_str}' 而被跳过。"
         )
         return None
 
-    # --- 后续所有计算都使用转换并检查完毕的 seq_upper ---
     properties = {}
     seq_len = len(seq_upper)
     
     # --- 结构性质 (使用ViennaRNA) ---
     try:
-        structure, mfe = RNA.fold(seq_upper)
-        properties["mfe"] = mfe
+        # 使用 fold_compound 对象进行更高级的计算
+        fc = RNA.fold_compound(seq_upper)
+        
+        # 1. 计算 MFE 和相关属性
+        (structure_mfe, mfe) = fc.mfe()
         properties["mfe_normalized"] = mfe / seq_len
-        paired_bases = structure.count('(') + structure.count(')')
+        paired_bases = structure_mfe.count('(') + structure_mfe.count(')')
         properties["structuredness"] = paired_bases / seq_len
+        
+        # 2. 计算质心结构和编辑距离
+        fc.pf()  # 计算分区函数，为质心计算做准备
+        (structure_centroid, _) = fc.centroid()
+        
+        # 计算MFE结构与质心结构之间的碱基对距离
+        distance = RNA.bp_distance(structure_mfe, structure_centroid)
+        properties["structure_edit_distance"] = distance
+
     except Exception as e:
-        logger.debug(f"RNA.fold for sequence '{seq_upper}' failed: {e}")
-        properties["mfe"] = None
+        logger.debug(f"RNA 属性计算失败，序列: '{seq_upper}', 错误: {e}")
         properties["mfe_normalized"] = None
         properties["structuredness"] = None
+        properties["structure_edit_distance"] = None
 
     # --- 组成性质 ---
     properties["gc_content"] = (seq_upper.count('G') + seq_upper.count('C')) / seq_len
@@ -208,10 +217,8 @@ def calculate_single_rna_properties(seq: str) -> dict | None:
 
     # --- 热力学性质 (使用BioPython) ---
     try:
-        # 使用标准的RNA热力学参数表进行计算
         properties["tm"] = mt.Tm_NN(Seq(seq_upper), nn_table=mt.R_DNA_NN1)
     except Exception:
-        # 对于过短或某些特殊序列可能无法计算
         properties["tm"] = None
 
     # --- 用于后续聚合的频率计数 ---
@@ -231,12 +238,10 @@ def calculate_rna_properties(sequences: list[str]) -> tuple[dict, dict]:
         "total_dinucleotides": 0
     }
     
-    # 使用所有可用的CPU核心
-    num_processes = 10
+    num_processes = 100
     logger.info(f"使用 {num_processes} 个CPU核心进行并行计算...")
 
     with Pool(processes=num_processes) as pool:
-        # 使用track显示进度条
         results = list(track(
             pool.imap_unordered(calculate_single_rna_properties, sequences, chunksize=100),
             description="正在计算理化性质...",
@@ -245,12 +250,16 @@ def calculate_rna_properties(sequences: list[str]) -> tuple[dict, dict]:
 
     for res in results:
         if res:
-            # 收集用于绘制分布图的属性
-            for key in ["gc_content", "mfe", "sequence_entropy", "mfe_normalized", "structuredness", "tm"]:
+            # --- 修改点: 更新收集的属性列表 ---
+            # 移除 'mfe'，新增 'structure_edit_distance'
+            prop_keys = [
+                "gc_content", "sequence_entropy", "mfe_normalized", 
+                "structuredness", "tm", "structure_edit_distance"
+            ]
+            for key in prop_keys:
                 if res.get(key) is not None:
                     dist_properties[key].append(res[key])
             
-            # 聚合用于频率分析的计数
             freq_properties["base"].update(res["base_counts"])
             freq_properties["dinucleotide"].update(res["dinucleotide_counts"])
             seq_len = sum(res["base_counts"].values())
@@ -287,7 +296,6 @@ def main():
         required=True, 
         help="用于保存输出图表的目录。"
     )
-    # --- 新增点：添加采样参数 ---
     parser.add_argument(
         "--train_sample_size",
         type=int,
@@ -296,10 +304,8 @@ def main():
     )
     args = parser.parse_args()
 
-    # 创建输出目录
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- 1. 读取序列 ---
     logger.info("--- 开始读取序列 ---")
     user_sequences = read_sequences_from_file(args.input_file)
     train_sequences = load_training_set(args.train_file)
@@ -308,31 +314,26 @@ def main():
         logger.error("一个或两个输入文件为空或无法读取，程序终止。")
         return
 
-    # --- 新增点：对训练集进行采样 ---
     if args.train_sample_size:
         total_size = len(train_sequences)
         if args.train_sample_size < total_size:
             logger.info(f"训练集共包含 {total_size} 条序列。将从中随机采样 {args.train_sample_size} 条进行分析...")
-            random.seed(42)  # 固定随机种子以保证结果可复现
+            random.seed(42)
             train_sequences = random.sample(train_sequences, args.train_sample_size)
         else:
             logger.info(f"请求的采样数量 ({args.train_sample_size}) 大于或等于训练集总数 ({total_size})。将使用全部序列。")
 
-    # --- 2. 计算性质 ---
     logger.info("\n--- 开始计算用户序列的性质 ---")
     user_dist_props, user_freq_props = calculate_rna_properties(user_sequences)
     
     logger.info("\n--- 开始计算训练集序列的性质 ---")
     train_dist_props, train_freq_props = calculate_rna_properties(train_sequences)
 
-    # --- 3. 绘图 ---
     logger.info("\n--- 开始生成对比图表 ---")
     
-    # 绘制理化性质分布图
     props_plot_path = args.output_dir / "physicochemical_properties_distribution.png"
     plot_property_distributions(user_dist_props, train_dist_props, str(props_plot_path))
 
-    # 绘制频率分布图
     freq_plot_path = args.output_dir / "frequency_distribution.png"
     plot_frequency_distributions(user_freq_props, train_freq_props, str(freq_plot_path))
 
