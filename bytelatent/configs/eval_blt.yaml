@@ -2,7 +2,7 @@
 
 
 
-ckpt_dir: "/home/cunyuliu/blt-main/tmp/trainblt_1000_newcode/checkpoints/0000032500/consolidated"
+ckpt_dir: "/home/cunyuliu/blt-main/tmp/trainblt_1000_newcode/checkpoints/0000068000/consolidated"
 
 # (Required) Path to a directory where output files or logs will be saved.
 # The script asserts that this directory is specified.
@@ -27,6 +27,10 @@ run_tasks: false
 num_to_generate: 256
 batch_size: 1
 
+generator: 
+  temperature: 0.9
+  top_p: 0.9
+  max_gen_len: 1280
 
 # A list of strings that the model will use as starting points for generation.
 prompts:
